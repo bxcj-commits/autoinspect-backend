@@ -2,6 +2,7 @@ import os
 import base64
 import json
 import requests
+import time
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -95,7 +96,8 @@ async def inspect_vehicle(files: list[UploadFile] = File(...)):
             content = await file.read()
             if i == 0:
                 try:
-                    text = call_gemini(VEHICLE_PROMPT, content, file.content_type)
+time.sleep(5)
+            text = call_gemini(INSPECTION_PROMPT, content, file.content_type)
                     vehicle_info = parse_json(text)
                 except Exception:
                     vehicle_info = {"marque": "Inconnu", "modele": "Inconnu", "couleur": "Inconnu", "type": "Inconnu"}
