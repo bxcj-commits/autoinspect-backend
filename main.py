@@ -1,8 +1,8 @@
 import os
 import base64
 import json
-import requests
 import time
+import requests
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -43,7 +43,7 @@ VEHICLE_PROMPT = """Identifie ce vehicule. Reponds UNIQUEMENT en JSON :
 {"marque": "string", "modele": "string", "couleur": "string", "type": "string"}"""
 
 
-def call_gemini(prompt: str, image_bytes: bytes, mime_type: str) -> str:
+def call_gemini(prompt, image_bytes, mime_type):
     image_b64 = base64.b64encode(image_bytes).decode("utf-8")
     payload = {
         "contents": [{"parts": [
@@ -57,7 +57,7 @@ def call_gemini(prompt: str, image_bytes: bytes, mime_type: str) -> str:
     return resp.json()["candidates"][0]["content"]["parts"][0]["text"]
 
 
-def parse_json(text: str) -> dict:
+def parse_json(text):
     text = text.strip()
     if "```" in text:
         parts = text.split("```")
@@ -92,28 +92,30 @@ async def inspect_vehicle(files: list[UploadFile] = File(...)):
     for i, file in enumerate(files):
         if not file.content_type.startswith("image/"):
             continue
-        try:
-            content = await file.read()
-            if i == 0:
-                try:
-time.sleep(5)
-            text = call_gemini(INSPECTION_PROMPT, content, file.content_type)
-                    vehicle_info = parse_json(text)
-                except Exception:
-                    vehicle_info = {"marque": "Inconnu", "modele": "Inconnu", "couleur": "Inconnu", "type": "Inconnu"}
 
+        content = await file.read()
+
+        if i == 0:
+            try:
+                text = call_gemini(VEHICLE_PROMPT, content, file.content_type)
+                vehicle_info = parse_json(text)
+            except Exception:
+                vehicle_info = {"marque": "Inconnu", "modele": "Inconnu", "couleur": "Inconnu", "type": "Inconnu"}
+            time.sleep(5)
+
+        try:
             text = call_gemini(INSPECTION_PROMPT, content, file.content_type)
             result = parse_json(text)
-
             for d in result.get("defauts", []):
                 d["photo_source"] = file.filename
                 all_defauts.append(d)
             for r in result.get("recommandations", []):
                 all_recommandations.add(r)
             scores.append(result.get("score_global", 100))
-
         except Exception as e:
             errors.append(f"{file.filename}: erreur - {str(e)}")
+
+        time.sleep(5)
 
     if not scores:
         raise HTTPException(status_code=500, detail=f"Erreurs: {errors}")
