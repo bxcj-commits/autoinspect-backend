@@ -9,7 +9,7 @@ import io
 
 # Configuration Gemini (GRATUIT - 1500 requêtes/jour)
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = genai.GenerativeModel("gemini-1.5-flash-latest")
 
 app = FastAPI(title="AutoInspect IA - API Gratuite")
 
