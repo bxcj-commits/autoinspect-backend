@@ -1,15 +1,12 @@
 import os
-import base64
 import json
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import google.generativeai as genai
-from PIL import Image
-import io
+from google import genai
+from google.genai import types
 
-# Configuration Gemini (GRATUIT - 1500 requêtes/jour)
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-1.5-flash-latest")
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+MODEL = "gemini-2.0-flash"
 
 app = FastAPI(title="AutoInspect IA - API Gratuite")
 
@@ -22,30 +19,28 @@ app.add_middleware(
 )
 
 INSPECTION_PROMPT = """
-Tu es un expert en inspection automobile avec 20 ans d'expérience en carrosserie et mécanique.
-Analyse cette photo de véhicule avec une précision maximale et détecte TOUS les défauts visibles.
+Tu es un expert en inspection automobile avec 20 ans d'experience en carrosserie et mecanique.
+Analyse cette photo de vehicule avec une precision maximale et detecte TOUS les defauts visibles.
 
-Défauts à rechercher impérativement :
-- Bosses, pocs, renfoncements (même minimes)
-- Rayures, griffures, éraflures sur la carrosserie
-- Coulures de peinture, peeling, différences de teinte
-- Jantes abîmées, voilées, rayées, ébréchées
-- Écarts de fitment (portes, capot, coffre mal alignés)
-- Oxydation, rouille, bulles sous la peinture
-- Fissures, craquelures (pare-chocs, plastiques)
-- Impacts sur vitres, pare-brise
-- Dommages sur rétroviseurs, poignées, joints
-- Pneus usés, déformés, sous-gonflés
-- Traces de réparations antérieures (masticage, repeinture)
+Defauts a rechercher :
+- Bosses, pocs, renfoncements
+- Rayures, griffures, eraflures
+- Coulures de peinture, peeling, differences de teinte
+- Jantes abimees, voilees, rayees
+- Ecarts de fitment (portes, capot, coffre mal alignes)
+- Oxydation, rouille
+- Fissures sur pare-chocs
+- Impacts sur vitres
+- Traces de reparations anterieures
 
-Réponds UNIQUEMENT en JSON valide sans aucun texte autour, sans markdown, avec exactement ce format :
+Reponds UNIQUEMENT en JSON valide sans markdown :
 {
   "defauts": [
     {
-      "type": "string (ex: Bosse, Rayure profonde, Coulure de peinture...)",
-      "localisation": "string (ex: Aile avant gauche, Porte arrière droite...)",
+      "type": "string",
+      "localisation": "string",
       "severite": "mineur|modere|grave",
-      "description": "string (description précise)",
+      "description": "string",
       "cout_reparation_min": 0,
       "cout_reparation_max": 0
     }
@@ -54,26 +49,20 @@ Réponds UNIQUEMENT en JSON valide sans aucun texte autour, sans markdown, avec 
   "resume": "string",
   "recommandations": ["string"]
 }
-
-Si aucun défaut n'est visible, retourne un tableau vide et un score de 95-100.
 """
 
 VEHICLE_PROMPT = """
-Identifie ce véhicule et réponds UNIQUEMENT en JSON sans texte autour :
+Identifie ce vehicule. Reponds UNIQUEMENT en JSON :
 {
-  "marque": "string ou Inconnu",
-  "modele": "string ou Inconnu",
+  "marque": "string",
+  "modele": "string",
   "couleur": "string",
-  "type": "string (berline, SUV, break, coupe, etc.)"
+  "type": "string"
 }
 """
 
 
-def load_image(content: bytes) -> Image.Image:
-    return Image.open(io.BytesIO(content))
-
-
-def parse_json_response(text: str) -> dict:
+def parse_json(text: str) -> dict:
     text = text.strip()
     if "```" in text:
         parts = text.split("```")
@@ -89,7 +78,7 @@ def parse_json_response(text: str) -> dict:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "gemini-1.5-flash", "tier": "gratuit"}
+    return {"status": "ok", "model": MODEL, "tier": "gratuit"}
 
 
 @app.post("/inspect")
@@ -113,20 +102,31 @@ async def inspect_vehicle(files: list[UploadFile] = File(...)):
         try:
             content = await file.read()
             if len(content) > 20 * 1024 * 1024:
-                errors.append(f"{file.filename}: trop lourd (max 20MB)")
+                errors.append(f"{file.filename}: trop lourd")
                 continue
 
-            img = load_image(content)
+            image_part = types.Part.from_bytes(
+                data=content,
+                mime_type=file.content_type
+            )
 
+            # Identification vehicule sur 1ere photo
             if i == 0:
                 try:
-                    info_resp = model.generate_content([VEHICLE_PROMPT, img])
-                    vehicle_info = parse_json_response(info_resp.text)
+                    info_resp = client.models.generate_content(
+                        model=MODEL,
+                        contents=[VEHICLE_PROMPT, image_part]
+                    )
+                    vehicle_info = parse_json(info_resp.text)
                 except Exception:
                     vehicle_info = {"marque": "Inconnu", "modele": "Inconnu", "couleur": "Inconnu", "type": "Inconnu"}
 
-            resp = model.generate_content([INSPECTION_PROMPT, img])
-            result = parse_json_response(resp.text)
+            # Analyse des defauts
+            resp = client.models.generate_content(
+                model=MODEL,
+                contents=[INSPECTION_PROMPT, image_part]
+            )
+            result = parse_json(resp.text)
 
             for defaut in result.get("defauts", []):
                 defaut["photo_source"] = file.filename
@@ -143,7 +143,7 @@ async def inspect_vehicle(files: list[UploadFile] = File(...)):
             errors.append(f"{file.filename}: erreur - {str(e)}")
 
     if not scores:
-        raise HTTPException(status_code=500, detail=f"Aucune image analysée. Erreurs: {errors}")
+        raise HTTPException(status_code=500, detail=f"Aucune image analysee. Erreurs: {errors}")
 
     score_final = round(sum(scores) / len(scores))
     cout_min = sum(d.get("cout_reparation_min", 0) for d in all_defauts)
