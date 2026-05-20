@@ -6,7 +6,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL = "gemini-1.5-flash"
+MODEL = "gemini-2.0-flash-lite"
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent?key={API_KEY}"
 
 app = FastAPI(title="AutoInspect IA")
