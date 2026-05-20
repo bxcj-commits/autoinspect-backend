@@ -5,7 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from google.genai import types
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY"),
+    http_options={"api_version": "v1"}
+)
 MODEL = "gemini-1.5-flash"
 
 app = FastAPI(title="AutoInspect IA - API Gratuite")
